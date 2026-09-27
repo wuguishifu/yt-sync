@@ -90,6 +90,20 @@ export class YtdlpService {
       '-o',
       '%(title)s [%(id)s].%(ext)s',
     ];
+    if (this.config.plexMetadata) {
+      args.push(
+        // Plex's Personal Media agent reads embedded tags and uses a same-named .jpg as the poster.
+        '--embed-metadata',
+        '--embed-chapters',
+        '--embed-thumbnail',
+        '--write-thumbnail',
+        '--convert-thumbnails',
+        'jpg',
+        // yt-dlp puts the video URL in the comment tag; put the description there instead.
+        '--parse-metadata',
+        'description:(?s)(?P<meta_comment>.+)',
+      );
+    }
     if (this.config.ffmpegPath) {
       args.push('--ffmpeg-location', this.config.ffmpegPath);
     }

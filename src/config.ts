@@ -12,11 +12,16 @@ export interface AppConfig {
   maxAttempts: number;
   extraArgs: string[];
   logRetention: number;
+  plexMetadata: boolean;
 }
 
 function env(name: string): string | undefined {
   const value = process.env[name]?.trim();
   return value ? value : undefined;
+}
+
+function flag(name: string): boolean {
+  return /^(1|true|yes|on)$/i.test(env(name) ?? '');
 }
 
 export function loadConfig(): AppConfig {
@@ -39,6 +44,7 @@ export function loadConfig(): AppConfig {
       .split(/\s+/)
       .filter(Boolean),
     logRetention: Number(env('LOG_RETENTION') ?? 10000),
+    plexMetadata: flag('PLEX_METADATA'),
   };
 }
 

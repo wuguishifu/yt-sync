@@ -17,10 +17,17 @@ Self-hosted NestJS app that keeps local copies of public and unlisted YouTube pl
 | `MAX_ATTEMPTS`     | `3`                              | Download attempts per video before it stays `failed`                               |
 | `YTDLP_EXTRA_ARGS` | `--js-runtimes node:<node path>` | Extra args for every yt-dlp call                                                   |
 | `LOG_RETENTION`    | `10000`                          | Number of log entries kept in the database                                         |
+| `PLEX_METADATA`    | `false`                          | Embed metadata and write a poster image for Plex (see below)                       |
 
 yt-dlp needs a JavaScript runtime for YouTube, so by default it uses the Node binary that runs this app. If you set `YTDLP_EXTRA_ARGS` yourself, that default is replaced.
 
 Partial downloads and pre-merge streams go to `TEMP_DIR`, so a media server like Plex watching `DOWNLOAD_DIR` only sees finished files. If `TEMP_DIR` is on a different filesystem from `DOWNLOAD_DIR`, the final move is a copy, and the file appears gradually while it's copied. To get an instant rename instead, put `TEMP_DIR` on the same volume but outside the library folder.
+
+### Plex
+
+With `PLEX_METADATA=true`, each download embeds the title, upload date, description, chapters and thumbnail in the mp4. It also saves the thumbnail as `<video title> [<id>].jpg` next to the video. That's the metadata an "Other Videos" library can read, since its Personal Media agent ignores `.nfo` files and online sources. In Plex, make sure the Personal Media agent has **Local Media Assets** enabled (Settings → Agents → Other Videos → Personal Media), then refresh the library's metadata.
+
+Only new downloads get this metadata. Videos already on disk aren't changed.
 
 The cron schedule uses the container's local time. Set `TZ` to change the time zone.
 

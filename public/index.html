@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>yt-sync</title>
+    <style>
+      :root {
+        --bg: #f6f6f4;
+        --panel: #fff;
+        --text: #1b1b1b;
+        --muted: #6b6b6b;
+        --border: #e2e2de;
+        --accent: #c4302b;
+        --ok: #2e7d32;
+        --warn: #b26a00;
+        --err: #c62828;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #151515;
+          --panel: #1f1f1f;
+          --text: #eaeaea;
+          --muted: #9a9a9a;
+          --border: #333;
+          --accent: #ff5a52;
+          --ok: #66bb6a;
+          --warn: #ffb74d;
+          --err: #ef5350;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 24px 16px 64px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 16px;
+      }
+      h2 {
+        font-size: 15px;
+        margin: 0 0 12px;
+      }
+      section {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      input[type='text'] {
+        flex: 1;
+        min-width: 180px;
+        padding: 7px 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg);
+        color: var(--text);
+        font: inherit;
+      }
+      button {
+        padding: 7px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--panel);
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      button.link {
+        border: none;
+        background: none;
+        padding: 0;
+        color: var(--muted);
+        text-decoration: underline;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 4px 16px;
+        margin: 0 0 12px;
+      }
+      dt {
+        color: var(--muted);
+      }
+      dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .error {
+        color: var(--err);
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 6px;
+      }
+      .playlist {
+        border-top: 1px solid var(--border);
+        padding: 12px 0;
+      }
+      .playlist:first-of-type {
+        border-top: none;
+        padding-top: 0;
+      }
+      .playlist-head {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+      .playlist-title {
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .counts span {
+        margin-right: 10px;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .warn {
+        color: var(--warn);
+      }
+      .err {
+        color: var(--err);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 8px;
+        font-size: 13px;
+      }
+      td {
+        padding: 4px 6px;
+        border-top: 1px solid var(--border);
+        vertical-align: top;
+        overflow-wrap: anywhere;
+      }
+      td.status {
+        white-space: nowrap;
+        width: 1%;
+      }
+      #toast {
+        position: fixed;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--text);
+        color: var(--bg);
+        padding: 8px 14px;
+        border-radius: 6px;
+        display: none;
+        max-width: calc(100% - 32px);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>yt-sync</h1>
+
+      <section>
+        <h2>Status</h2>
+        <dl id="status">
+          <dt>Loading…</dt>
+          <dd></dd>
+        </dl>
+        <button class="primary" id="sync-now">Sync now</button>
+      </section>
+
+      <section>
+        <h2>Schedule</h2>
+        <form class="row" id="cron-form">
+          <input
+            type="text"
+            id="cron"
+            placeholder="0 * * * *"
+            aria-label="Cron expression"
+          />
+          <button type="submit">Save</button>
+        </form>
+        <div class="hint">
+          Cron expression (minute hour day month weekday). Example:
+          <code>0 */6 * * *</code> = every 6 hours.
+        </div>
+      </section>
+
+      <section>
+        <h2>Playlists</h2>
+        <form class="row" id="add-form" style="margin-bottom: 16px">
+          <input
+            type="text"
+            id="url"
+            placeholder="https://www.youtube.com/playlist?list=…"
+            aria-label="Playlist URL"
+          />
+          <button type="submit" class="primary">Add</button>
+        </form>
+        <div id="playlists"></div>
+      </section>
+    </main>
+    <div id="toast"></div>
+
+    <script>
+      const $ = (s) => document.querySelector(s);
+      const open = new Set();
+      let pollTimer;
+
+      async function api(method, path, body) {
+        const res = await fetch('/api' + path, {
+          method,
+          headers: body ? { 'Content-Type': 'application/json' } : {},
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(
+            Array.isArray(data.message)
+              ? data.message.join(', ')
+              : data.message || res.statusText,
+          );
+        }
+        return res.status === 204 ? null : res.json();
+      }
+
+      function toast(msg) {
+        const el = $('#toast');
+        el.textContent = msg;
+        el.style.display = 'block';
+        clearTimeout(el._t);
+        el._t = setTimeout(() => (el.style.display = 'none'), 4000);
+      }
+
+      const esc = (s) =>
+        String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+      const when = (iso) =>
+        iso
+          ? new Date(
+              iso.includes('T') ? iso : iso.replace(' ', 'T') + 'Z',
+            ).toLocaleString()
+          : '—';
+
+      async function loadStatus() {
+        const s = await api('GET', '/status');
+        $('#status').innerHTML = `
+      <dt>State</dt><dd>${s.running ? `<span class="warn">Syncing</span> — ${esc(s.current ?? '')}` : '<span class="ok">Idle</span>'}</dd>
+      <dt>Next run</dt><dd>${when(s.nextRunAt)}</dd>
+      <dt>Last run</dt><dd>${s.lastRunFinishedAt ? `${when(s.lastRunFinishedAt)} — ${esc(s.lastRunSummary)}` : '—'}</dd>
+      <dt>yt-dlp</dt><dd>${s.ytdlpVersion ? esc(s.ytdlpVersion) : `<span class="err">not found at ${esc(s.ytdlpPath)}</span>`}</dd>
+      <dt>ffmpeg</dt><dd>${esc(s.ffmpegPath ?? 'default (PATH)')}</dd>
+      <dt>Download dir</dt><dd>${esc(s.downloadDir)}</dd>`;
+        $('#sync-now').disabled = s.running;
+        return s;
+      }
+
+      async function loadPlaylists() {
+        const list = await api('GET', '/playlists');
+        const el = $('#playlists');
+        if (!list.length) {
+          el.innerHTML =
+            '<p class="muted">No playlists yet. Add a public or unlisted playlist above.</p>';
+          return;
+        }
+        el.innerHTML = list
+          .map(
+            (p) => `
+      <div class="playlist" data-id="${p.id}">
+        <div class="playlist-head">
+          <div>
+            <div class="playlist-title">${esc(p.title ?? p.youtube_id)}${p.enabled ? '' : ' <span class="muted">(paused)</span>'}</div>
+            <div class="muted"><a href="https://www.youtube.com/playlist?list=${esc(p.youtube_id)}" target="_blank" rel="noopener">${esc(p.youtube_id)}</a>
+              · folder: ${esc(p.folder ?? '—')} · last synced: ${when(p.last_synced_at)}</div>
+            <div class="counts">
+              <span class="ok">${p.done} downloaded</span>
+              ${p.pending ? `<span class="warn">${p.pending} pending</span>` : ''}
+              ${p.failed ? `<span class="err">${p.failed} failed</span>` : ''}
+              <button class="link" data-action="toggle-videos">${open.has(p.id) ? 'hide' : 'show'} videos</button>
+            </div>
+            ${p.last_error ? `<div class="error">${esc(p.last_error)}</div>` : ''}
+          </div>
+          <div class="row">
+            ${p.failed ? '<button data-action="retry">Retry failed</button>' : ''}
+            <button data-action="enable">${p.enabled ? 'Pause' : 'Resume'}</button>
+            <button data-action="remove">Remove</button>
+          </div>
+        </div>
+        <div class="videos"></div>
+      </div>`,
+          )
+          .join('');
+        for (const id of open) {
+          const node = el.querySelector(`[data-id="${id}"] .videos`);
+          if (node) loadVideos(id, node);
+          else open.delete(id);
+        }
+      }
+
+      async function loadVideos(id, node) {
+        const videos = await api('GET', `/playlists/${id}/videos`);
+        const cls = { done: 'ok', pending: 'warn', failed: 'err' };
+        node.innerHTML = videos.length
+          ? `<table>${videos
+              .map(
+                (v) => `
+      <tr>
+        <td class="status ${cls[v.status]}">${v.status}</td>
+        <td><a href="https://www.youtube.com/watch?v=${esc(v.video_id)}" target="_blank" rel="noopener">${esc(v.title ?? v.video_id)}</a>
+          ${v.error ? `<div class="error">${esc(v.error)}</div>` : ''}</td>
+      </tr>`,
+              )
+              .join('')}</table>`
+          : '<p class="muted">No videos yet.</p>';
+      }
+
+      async function refresh() {
+        clearTimeout(pollTimer);
+        try {
+          const s = await loadStatus();
+          await loadPlaylists();
+          pollTimer = setTimeout(refresh, s.running ? 3000 : 15000);
+        } catch (e) {
+          toast(e.message);
+          pollTimer = setTimeout(refresh, 15000);
+        }
+      }
+
+      $('#sync-now').onclick = async () => {
+        const { started } = await api('POST', '/sync');
+        toast(started ? 'Sync started' : 'A sync is already running');
+        refresh();
+      };
+
+      $('#cron-form').onsubmit = async (e) => {
+        e.preventDefault();
+        try {
+          await api('PUT', '/settings', { cron: $('#cron').value });
+          toast('Schedule saved');
+          refresh();
+        } catch (err) {
+          toast(err.message);
+        }
+      };
+
+      $('#add-form').onsubmit = async (e) => {
+        e.preventDefault();
+        try {
+          await api('POST', '/playlists', { url: $('#url').value });
+          $('#url').value = '';
+          toast('Playlist added, syncing…');
+          refresh();
+        } catch (err) {
+          toast(err.message);
+        }
+      };
+
+      $('#playlists').onclick = async (e) => {
+        const btn = e.target.closest('button[data-action]');
+        if (!btn) return;
+        const card = btn.closest('.playlist');
+        const id = Number(card.dataset.id);
+        try {
+          switch (btn.dataset.action) {
+            case 'toggle-videos':
+              open.has(id) ? open.delete(id) : open.add(id);
+              break;
+            case 'enable':
+              await api('PATCH', `/playlists/${id}`, {
+                enabled: btn.textContent === 'Resume',
+              });
+              break;
+            case 'retry':
+              await api('POST', `/playlists/${id}/retry`);
+              toast('Retrying failed downloads');
+              break;
+            case 'remove':
+              if (
+                !confirm(
+                  'Stop syncing this playlist? Downloaded files are kept.',
+                )
+              )
+                return;
+              await api('DELETE', `/playlists/${id}`);
+              open.delete(id);
+              break;
+          }
+          refresh();
+        } catch (err) {
+          toast(err.message);
+        }
+      };
+
+      api('GET', '/settings').then((s) => ($('#cron').value = s.cron));
+      refresh();
+    </script>
+  </body>
+</html>

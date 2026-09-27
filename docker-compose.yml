@@ -1,0 +1,17 @@
+services:
+  yt-sync:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      TZ: America/Los_Angeles
+      SYNC_CRON: '0 * * * *'
+      YTDLP_PATH: /opt/bin/yt-dlp
+      FFMPEG_PATH: /opt/bin/ffmpeg
+    volumes:
+      # Standalone Linux builds: yt-dlp_linux (or yt-dlp_linux_aarch64) and a static ffmpeg
+      - ./bin/yt-dlp:/opt/bin/yt-dlp:ro
+      - ./bin/ffmpeg:/opt/bin/ffmpeg:ro
+      - ./data:/data
+      - ./downloads:/downloads

@@ -4,7 +4,6 @@ import {
   Delete,
   Get,
   HttpCode,
-  Inject,
   Param,
   ParseIntPipe,
   Patch,
@@ -13,33 +12,24 @@ import {
   Query,
   Sse,
 } from '@nestjs/common';
-import { map, Observable } from 'rxjs';
-import { APP_CONFIG, AppConfig } from './config';
-import { LogEntry, LogService } from './services/log.service';
+import { interval, map, merge, Observable } from 'rxjs';
+import { EventsService } from './services/events.service';
+import { LogService } from './services/log.service';
 import { PlaylistsService } from './services/playlists.service';
 import { SyncService } from './services/sync.service';
-import { YtdlpService } from './services/ytdlp.service';
 
 @Controller('api')
 export class ApiController {
   constructor(
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly playlists: PlaylistsService,
     private readonly sync: SyncService,
-    private readonly ytdlp: YtdlpService,
     private readonly logs: LogService,
+    private readonly events: EventsService,
   ) {}
 
   @Get('status')
-  async status() {
-    return {
-      ...this.sync.status(),
-      ytdlpVersion: await this.ytdlp.version(),
-      ytdlpPath: this.config.ytdlpPath,
-      ffmpegPath: this.config.ffmpegPath,
-      downloadDir: this.config.downloadDir,
-      tempDir: this.config.tempDir,
-    };
+  status() {
+    return this.sync.status();
   }
 
   @Post('sync')
@@ -103,8 +93,16 @@ export class ApiController {
     return this.logs.recent(n, after ? Number(after) : undefined);
   }
 
-  @Sse('logs/stream')
-  streamLogs(): Observable<{ data: LogEntry }> {
-    return this.logs.stream.pipe(map((entry) => ({ data: entry })));
+  /**
+   * Live updates for the web UI: `log` entries, `status` and `playlists`
+   * snapshots, and a periodic `ping` so idle proxies don't drop the connection.
+   */
+  @Sse('events')
+  stream(): Observable<{ type: string; data: unknown }> {
+    return merge(
+      this.logs.stream.pipe(map((entry) => ({ type: 'log', data: entry }))),
+      this.events.stream,
+      interval(25_000).pipe(map(() => ({ type: 'ping', data: '' }))),
+    );
   }
 }

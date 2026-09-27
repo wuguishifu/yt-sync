@@ -11,6 +11,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { APP_CONFIG, AppConfig } from '../config';
 import { DatabaseService } from './database.service';
+import { EventsService } from './events.service';
 import { PlaylistsService } from './playlists.service';
 import { YtdlpService } from './ytdlp.service';
 
@@ -23,6 +24,11 @@ export interface SyncStatus {
   lastRunFinishedAt: string | null;
   lastRunSummary: string | null;
   nextRunAt: string | null;
+  ytdlpVersion: string | null;
+  ytdlpPath: string;
+  ffmpegPath: string | null;
+  downloadDir: string;
+  tempDir: string;
 }
 
 @Injectable()
@@ -40,6 +46,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     private readonly database: DatabaseService,
     private readonly playlists: PlaylistsService,
     private readonly ytdlp: YtdlpService,
+    private readonly events: EventsService,
   ) {}
 
   onModuleInit() {
@@ -73,7 +80,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     this.schedule(cron);
   }
 
-  status(): SyncStatus {
+  async status(): Promise<SyncStatus> {
     return {
       running: this.running,
       current: this.current,
@@ -81,7 +88,22 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       lastRunFinishedAt: this.lastRunFinishedAt,
       lastRunSummary: this.lastRunSummary,
       nextRunAt: this.job?.nextDate().toISO() ?? null,
+      ytdlpVersion: await this.ytdlp.version(),
+      ytdlpPath: this.config.ytdlpPath,
+      ffmpegPath: this.config.ffmpegPath,
+      downloadDir: this.config.downloadDir,
+      tempDir: this.config.tempDir,
     };
+  }
+
+  /** Pushes the current status to connected UIs. */
+  private publishStatus(): void {
+    void this.status().then((status) => this.events.emit('status', status));
+  }
+
+  private setCurrent(current: string | null): void {
+    this.current = current;
+    this.publishStatus();
   }
 
   /** Starts a sync in the background. Returns false if one is already running. */
@@ -96,16 +118,19 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     this.job = CronJob.from({
       cronTime: cron,
       onTick: () => {
-        if (!this.trigger())
+        if (!this.trigger()) {
           this.logger.warn(
             'Scheduled sync skipped: previous sync still running',
           );
+          this.publishStatus();
+        }
       },
       start: true,
     });
     this.logger.log(
       `Sync scheduled with cron "${cron}" (next: ${this.job.nextDate().toISO()})`,
     );
+    this.publishStatus();
   }
 
   private async run() {
@@ -115,11 +140,12 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
     let downloaded = 0;
     let failed = 0;
     this.logger.log('Sync started');
+    this.publishStatus();
 
     try {
       for (const playlist of this.playlists.listEnabled()) {
         const label = playlist.title ?? playlist.youtube_id;
-        this.current = `Fetching ${label}`;
+        this.setCurrent(`Fetching ${label}`);
         let synced;
         try {
           const info = await this.ytdlp.getPlaylist(playlist.youtube_id);
@@ -145,7 +171,9 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
         );
         for (const [i, video] of queue.entries()) {
           const name = video.title ?? video.video_id;
-          this.current = `Downloading ${name} (${i + 1}/${queue.length} in ${synced.title})`;
+          this.setCurrent(
+            `Downloading ${name} (${i + 1}/${queue.length} in ${synced.title})`,
+          );
           try {
             await this.ytdlp.download(video.video_id, outputDir);
             this.playlists.markDone(video.id);
@@ -165,7 +193,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
       this.lastRunSummary = `${added} new, ${downloaded} downloaded, ${failed} failed`;
       this.lastRunFinishedAt = new Date().toISOString();
       this.running = false;
-      this.current = null;
+      this.setCurrent(null);
       this.logger.log(`Sync finished: ${this.lastRunSummary}`);
     }
   }

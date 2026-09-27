@@ -20,27 +20,30 @@ interface RunResult {
 export class YtdlpService {
   private readonly logger = new Logger(YtdlpService.name);
   private readonly outputLogger = new Logger('yt-dlp');
-  private cachedVersion: { value: string | null; at: number } | null = null;
+  private cachedVersion: { value: Promise<string | null>; at: number } | null =
+    null;
 
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
-  /** Cached so status polling doesn't spawn yt-dlp; rechecked periodically in case the binary changes. */
-  async version(): Promise<string | null> {
+  /** Cached so frequent status updates don't spawn yt-dlp; rechecked periodically in case the binary changes. */
+  version(): Promise<string | null> {
     if (
-      this.cachedVersion &&
-      Date.now() - this.cachedVersion.at < VERSION_TTL_MS
+      !this.cachedVersion ||
+      Date.now() - this.cachedVersion.at >= VERSION_TTL_MS
     ) {
-      return this.cachedVersion.value;
+      // Cache the promise so concurrent callers share one yt-dlp process.
+      this.cachedVersion = { value: this.fetchVersion(), at: Date.now() };
     }
-    let value: string | null = null;
+    return this.cachedVersion.value;
+  }
+
+  private async fetchVersion(): Promise<string | null> {
     try {
       const result = await this.run(['--version']);
-      if (result.code === 0) value = result.stdout.trim();
+      return result.code === 0 ? result.stdout.trim() : null;
     } catch {
-      // not runnable
+      return null; // not runnable
     }
-    this.cachedVersion = { value, at: Date.now() };
-    return value;
   }
 
   async getPlaylist(youtubeId: string): Promise<PlaylistInfo> {

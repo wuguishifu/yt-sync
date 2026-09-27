@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DatabaseService, PlaylistRow, VideoRow } from './database.service';
+import { EventsService } from './events.service';
 
 export interface PlaylistSummary extends PlaylistRow {
   total: number;
@@ -27,7 +28,10 @@ export function parsePlaylistId(input: string): string | null {
 
 @Injectable()
 export class PlaylistsService {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly events: EventsService,
+  ) {}
 
   private get db() {
     return this.database.db;
@@ -75,6 +79,7 @@ export class PlaylistsService {
     const { lastInsertRowid } = this.db
       .prepare('INSERT INTO playlists (youtube_id) VALUES (?)')
       .run(youtubeId);
+    this.changed();
     return this.get(Number(lastInsertRowid));
   }
 
@@ -83,6 +88,7 @@ export class PlaylistsService {
     this.db
       .prepare('UPDATE playlists SET enabled = ? WHERE id = ?')
       .run(enabled ? 1 : 0, id);
+    this.changed();
     return this.get(id);
   }
 
@@ -90,6 +96,7 @@ export class PlaylistsService {
   remove(id: number): void {
     this.get(id);
     this.db.prepare('DELETE FROM playlists WHERE id = ?').run(id);
+    this.changed();
   }
 
   videos(id: number): VideoRow[] {
@@ -108,6 +115,7 @@ export class PlaylistsService {
         `UPDATE videos SET status = 'pending', attempts = 0, error = NULL WHERE playlist_id = ? AND status = 'failed'`,
       )
       .run(id);
+    this.changed();
   }
 
   /** Records the playlist's metadata and assigns a stable download folder on first sync. */
@@ -125,6 +133,7 @@ export class PlaylistsService {
         `UPDATE playlists SET title = ?, folder = ?, last_synced_at = datetime('now'), last_error = NULL WHERE id = ?`,
       )
       .run(title, folder, playlist.id);
+    this.changed();
     return this.get(playlist.id);
   }
 
@@ -132,6 +141,7 @@ export class PlaylistsService {
     this.db
       .prepare('UPDATE playlists SET last_error = ? WHERE id = ?')
       .run(error, id);
+    this.changed();
   }
 
   /** Inserts entries not seen before as pending. Returns how many were new. */
@@ -153,6 +163,7 @@ export class PlaylistsService {
       this.db.exec('ROLLBACK');
       throw err;
     }
+    if (added) this.changed();
     return added;
   }
 
@@ -172,6 +183,7 @@ export class PlaylistsService {
         `UPDATE videos SET status = 'done', error = NULL, attempts = attempts + 1, downloaded_at = datetime('now') WHERE id = ?`,
       )
       .run(videoRowId);
+    this.changed();
   }
 
   markFailed(videoRowId: number, error: string): void {
@@ -180,6 +192,12 @@ export class PlaylistsService {
         `UPDATE videos SET status = 'failed', error = ?, attempts = attempts + 1 WHERE id = ?`,
       )
       .run(error, videoRowId);
+    this.changed();
+  }
+
+  /** Pushes the updated playlist summaries to connected UIs. */
+  private changed(): void {
+    this.events.emit('playlists', this.list());
   }
 }
 

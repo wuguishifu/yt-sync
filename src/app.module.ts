@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ApiController } from './api.controller';
 import { APP_CONFIG, loadConfig } from './config';
 import { DatabaseService } from './services/database.service';
+import { LogService } from './services/log.service';
 import { PlaylistsService } from './services/playlists.service';
 import { SyncService } from './services/sync.service';
 import { YtdlpService } from './services/ytdlp.service';
@@ -11,6 +12,7 @@ import { YtdlpService } from './services/ytdlp.service';
   providers: [
     { provide: APP_CONFIG, useFactory: loadConfig },
     DatabaseService,
+    LogService,
     PlaylistsService,
     SyncService,
     YtdlpService,

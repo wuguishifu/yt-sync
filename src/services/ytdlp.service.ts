@@ -1,11 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import { APP_CONFIG, AppConfig } from '../config';
 
 export interface PlaylistInfo {
   title: string;
   entries: { id: string; title: string | null }[];
 }
+
+const VERSION_TTL_MS = 5 * 60 * 1000;
 
 interface RunResult {
   code: number | null;
@@ -16,16 +19,28 @@ interface RunResult {
 @Injectable()
 export class YtdlpService {
   private readonly logger = new Logger(YtdlpService.name);
+  private readonly outputLogger = new Logger('yt-dlp');
+  private cachedVersion: { value: string | null; at: number } | null = null;
 
   constructor(@Inject(APP_CONFIG) private readonly config: AppConfig) {}
 
+  /** Cached so status polling doesn't spawn yt-dlp; rechecked periodically in case the binary changes. */
   async version(): Promise<string | null> {
+    if (
+      this.cachedVersion &&
+      Date.now() - this.cachedVersion.at < VERSION_TTL_MS
+    ) {
+      return this.cachedVersion.value;
+    }
+    let value: string | null = null;
     try {
       const result = await this.run(['--version']);
-      return result.code === 0 ? result.stdout.trim() : null;
+      if (result.code === 0) value = result.stdout.trim();
     } catch {
-      return null;
+      // not runnable
     }
+    this.cachedVersion = { value, at: Date.now() };
+    return value;
   }
 
   async getPlaylist(youtubeId: string): Promise<PlaylistInfo> {
@@ -66,7 +81,9 @@ export class YtdlpService {
       '--merge-output-format',
       'mp4',
       '-P',
-      outputDir,
+      `home:${outputDir}`,
+      '-P',
+      `temp:${this.config.tempDir}`,
       '-o',
       '%(title)s [%(id)s].%(ext)s',
     ];
@@ -75,7 +92,7 @@ export class YtdlpService {
     }
     args.push(`https://www.youtube.com/watch?v=${videoId}`);
 
-    const result = await this.run(args);
+    const result = await this.run(args, { logStdout: true });
     if (result.code !== 0) {
       throw new Error(
         lastLine(result.stderr) ?? `yt-dlp exited with code ${result.code}`,
@@ -83,7 +100,11 @@ export class YtdlpService {
     }
   }
 
-  private run(args: string[]): Promise<RunResult> {
+  /**
+   * Runs yt-dlp. stderr lines are always forwarded to the log; stdout lines only
+   * when `logStdout` is set (it's JSON for playlist listings).
+   */
+  private run(args: string[], { logStdout = false } = {}): Promise<RunResult> {
     return new Promise((resolve, reject) => {
       this.logger.debug(`${this.config.ytdlpPath} ${args.join(' ')}`);
       const child = spawn(this.config.ytdlpPath, args, {
@@ -93,6 +114,15 @@ export class YtdlpService {
       let stderr = '';
       child.stdout.on('data', (chunk) => (stdout += chunk));
       child.stderr.on('data', (chunk) => (stderr += chunk));
+      if (logStdout) {
+        createInterface({ input: child.stdout }).on('line', (line) => {
+          if (line.trim()) this.outputLogger.debug(line);
+        });
+      }
+      createInterface({ input: child.stderr }).on('line', (line) => {
+        if (line.startsWith('ERROR')) this.outputLogger.error(line);
+        else if (line.trim()) this.outputLogger.warn(line);
+      });
       child.on('error', reject);
       child.on('close', (code) => resolve({ code, stdout, stderr }));
     });

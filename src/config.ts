@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 
 export interface AppConfig {
   port: number;
@@ -6,10 +6,12 @@ export interface AppConfig {
   ffmpegPath: string | null;
   downloadDir: string;
   dataDir: string;
+  tempDir: string;
   defaultCron: string;
   format: string;
   maxAttempts: number;
   extraArgs: string[];
+  logRetention: number;
 }
 
 function env(name: string): string | undefined {
@@ -18,12 +20,14 @@ function env(name: string): string | undefined {
 }
 
 export function loadConfig(): AppConfig {
+  const dataDir = resolve(env('DATA_DIR') ?? './data');
   return {
     port: Number(env('PORT') ?? 3000),
     ytdlpPath: env('YTDLP_PATH') ?? 'yt-dlp',
     ffmpegPath: env('FFMPEG_PATH') ?? null,
     downloadDir: resolve(env('DOWNLOAD_DIR') ?? './downloads'),
-    dataDir: resolve(env('DATA_DIR') ?? './data'),
+    dataDir,
+    tempDir: resolve(env('TEMP_DIR') ?? join(dataDir, 'tmp')),
     defaultCron: env('SYNC_CRON') ?? '0 * * * *',
     format:
       env('YTDLP_FORMAT') ?? 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b',
@@ -34,6 +38,7 @@ export function loadConfig(): AppConfig {
     )
       .split(/\s+/)
       .filter(Boolean),
+    logRetention: Number(env('LOG_RETENTION') ?? 10000),
   };
 }
 

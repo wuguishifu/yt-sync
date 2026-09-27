@@ -5,10 +5,14 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'node:path';
 import { AppModule } from './app.module';
 import { APP_CONFIG, AppConfig } from './config';
+import { LogService } from './services/log.service';
 import { YtdlpService } from './services/ytdlp.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+  });
+  app.useLogger(app.get(LogService));
   app.enableShutdownHooks();
   app.useStaticAssets(join(__dirname, '..', 'public'));
 
@@ -22,7 +26,9 @@ async function bootstrap() {
       `yt-dlp not runnable at "${config.ytdlpPath}" — set YTDLP_PATH`,
     );
   }
-  logger.log(`Downloading to ${config.downloadDir}, data in ${config.dataDir}`);
+  logger.log(
+    `Downloading to ${config.downloadDir} (temp: ${config.tempDir}), data in ${config.dataDir}`,
+  );
 
   await app.listen(config.port);
   logger.log(`Web UI listening on http://localhost:${config.port}`);

@@ -10,8 +10,12 @@ import {
   Patch,
   Post,
   Put,
+  Query,
+  Sse,
 } from '@nestjs/common';
+import { map, Observable } from 'rxjs';
 import { APP_CONFIG, AppConfig } from './config';
+import { LogEntry, LogService } from './services/log.service';
 import { PlaylistsService } from './services/playlists.service';
 import { SyncService } from './services/sync.service';
 import { YtdlpService } from './services/ytdlp.service';
@@ -23,6 +27,7 @@ export class ApiController {
     private readonly playlists: PlaylistsService,
     private readonly sync: SyncService,
     private readonly ytdlp: YtdlpService,
+    private readonly logs: LogService,
   ) {}
 
   @Get('status')
@@ -33,6 +38,7 @@ export class ApiController {
       ytdlpPath: this.config.ytdlpPath,
       ffmpegPath: this.config.ffmpegPath,
       downloadDir: this.config.downloadDir,
+      tempDir: this.config.tempDir,
     };
   }
 
@@ -89,5 +95,16 @@ export class ApiController {
   retryFailed(@Param('id', ParseIntPipe) id: number) {
     this.playlists.retryFailed(id);
     return { started: this.sync.trigger() };
+  }
+
+  @Get('logs')
+  listLogs(@Query('limit') limit?: string, @Query('after') after?: string) {
+    const n = Math.min(Math.max(Number(limit) || 500, 1), 5000);
+    return this.logs.recent(n, after ? Number(after) : undefined);
+  }
+
+  @Sse('logs/stream')
+  streamLogs(): Observable<{ data: LogEntry }> {
+    return this.logs.stream.pipe(map((entry) => ({ data: entry })));
   }
 }

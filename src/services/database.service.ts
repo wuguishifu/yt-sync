@@ -68,6 +68,14 @@ export class DatabaseService implements OnModuleDestroy {
         downloaded_at TEXT,
         UNIQUE (playlist_id, video_id)
       );
+
+      CREATE TABLE IF NOT EXISTS logs (
+        id      INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts      TEXT NOT NULL,
+        level   TEXT NOT NULL,
+        context TEXT,
+        message TEXT NOT NULL
+      );
     `);
   }
 

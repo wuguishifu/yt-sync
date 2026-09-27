@@ -172,6 +172,47 @@
         white-space: nowrap;
         width: 1%;
       }
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .section-head h2 {
+        margin: 0;
+      }
+      #logs {
+        height: 360px;
+        overflow: auto;
+        margin: 0;
+        padding: 8px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font:
+          12px/1.45 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      #logs .lvl-error,
+      #logs .lvl-fatal {
+        color: var(--err);
+      }
+      #logs .lvl-warn {
+        color: var(--warn);
+      }
+      #logs .lvl-debug,
+      #logs .lvl-verbose {
+        color: var(--muted);
+      }
+      #logs.hide-debug .lvl-debug,
+      #logs.hide-debug .lvl-verbose {
+        display: none;
+      }
       #toast {
         position: fixed;
         bottom: 16px;
@@ -229,6 +270,16 @@
         </form>
         <div id="playlists"></div>
       </section>
+
+      <section>
+        <div class="section-head">
+          <h2>Logs</h2>
+          <label class="muted"
+            ><input type="checkbox" id="show-debug" /> Show debug</label
+          >
+        </div>
+        <pre id="logs" class="hide-debug"></pre>
+      </section>
     </main>
     <div id="toast"></div>
 
@@ -279,7 +330,8 @@
       <dt>Last run</dt><dd>${s.lastRunFinishedAt ? `${when(s.lastRunFinishedAt)} — ${esc(s.lastRunSummary)}` : '—'}</dd>
       <dt>yt-dlp</dt><dd>${s.ytdlpVersion ? esc(s.ytdlpVersion) : `<span class="err">not found at ${esc(s.ytdlpPath)}</span>`}</dd>
       <dt>ffmpeg</dt><dd>${esc(s.ffmpegPath ?? 'default (PATH)')}</dd>
-      <dt>Download dir</dt><dd>${esc(s.downloadDir)}</dd>`;
+      <dt>Download dir</dt><dd>${esc(s.downloadDir)}</dd>
+      <dt>Temp dir</dt><dd>${esc(s.tempDir)}</dd>`;
         $('#sync-now').disabled = s.running;
         return s;
       }
@@ -420,8 +472,73 @@
         }
       };
 
+      const MAX_LOG_LINES = 2000;
+      const logEl = $('#logs');
+      let lastLogId = 0;
+
+      function appendLogs(entries) {
+        const atBottom =
+          logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 24;
+        const frag = document.createDocumentFragment();
+        for (const e of entries) {
+          if (e.id <= lastLogId) continue;
+          lastLogId = e.id;
+          const line = document.createElement('div');
+          line.className = `lvl-${e.level}`;
+          line.textContent = `${new Date(e.ts).toLocaleString()}  ${e.level.toUpperCase().padEnd(7)} ${e.context ? `[${e.context}] ` : ''}${e.message}`;
+          frag.append(line);
+        }
+        logEl.append(frag);
+        while (logEl.childElementCount > MAX_LOG_LINES) {
+          logEl.firstElementChild.remove();
+        }
+        if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      // Live entries are held back until the backfill request (initial load, or
+      // whatever was missed while disconnected) has been rendered.
+      function connectLogs() {
+        const source = new EventSource('/api/logs/stream');
+        let backfilled = false;
+        const pending = [];
+        source.onmessage = (ev) => {
+          const entry = JSON.parse(ev.data);
+          backfilled ? appendLogs([entry]) : pending.push(entry);
+        };
+        source.onopen = async () => {
+          backfilled = false;
+          try {
+            appendLogs(
+              await api(
+                'GET',
+                lastLogId
+                  ? `/logs?after=${lastLogId}&limit=5000`
+                  : '/logs?limit=500',
+              ),
+            );
+          } catch (err) {
+            toast(`Failed to load logs: ${err.message}`);
+          }
+          appendLogs(pending.splice(0));
+          backfilled = true;
+        };
+      }
+
+      const debugToggle = $('#show-debug');
+      try {
+        debugToggle.checked = localStorage.getItem('showDebug') === '1';
+      } catch {}
+      logEl.classList.toggle('hide-debug', !debugToggle.checked);
+      debugToggle.onchange = () => {
+        logEl.classList.toggle('hide-debug', !debugToggle.checked);
+        try {
+          localStorage.setItem('showDebug', debugToggle.checked ? '1' : '0');
+        } catch {}
+      };
+
       api('GET', '/settings').then((s) => ($('#cron').value = s.cron));
       refresh();
+      connectLogs();
     </script>
   </body>
 </html>

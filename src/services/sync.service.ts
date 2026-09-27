@@ -137,6 +137,7 @@ export class SyncService implements OnModuleInit, OnApplicationShutdown {
 
         const outputDir = join(this.config.downloadDir, synced.folder!);
         mkdirSync(outputDir, { recursive: true });
+        mkdirSync(this.config.tempDir, { recursive: true });
 
         const queue = this.playlists.downloadQueue(
           playlist.id,
